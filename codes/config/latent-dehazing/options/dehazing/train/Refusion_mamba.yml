@@ -1,0 +1,104 @@
+#### general settings
+name: latent-mamba-refusion-NH_HAZE
+use_tb_logger: true
+model: latent_denoising
+distortion: dehazing
+gpu_ids: [0]
+
+sde:
+  max_sigma: 50
+  T: 100
+  sample_T: 100
+  schedule: cosine # linear, cosine
+  eps: 0.005
+
+degradation: # for some synthetic dataset that only have GTs
+  # for denoising
+  sigma: 25
+  noise_type: G # Gaussian noise: G
+
+  # for super-resolution
+  scale: 4
+
+#### datasets
+datasets:
+  train:
+    name: Train_Dataset
+    mode: LQGT
+    dataroot_GT: /opt/data/private/LHD/refusion/train_data/NH_HAZE/GT
+    dataroot_LQ: /opt/data/private/LHD/refusion/train_data/NH_HAZE/hazy
+
+    use_shuffle: true
+    n_workers: 8  # per GPU
+    batch_size: 4
+    GT_size: 1024
+    LR_size: 1024
+    use_flip: true
+    use_rot: true #true
+    use_swap: false
+    color: RGB
+
+  val:
+    name: Val_Dataset
+    mode: LQGT
+    dataroot_GT: /opt/data/private/LHD/refusion/test_data/NH_HAZE/gt
+    dataroot_LQ: /opt/data/private/LHD/refusion/test_data/NH_HAZE/hazy
+    GT_size: 1024
+    LR_size: 1024
+
+#### network structures
+network_G:
+  which_model: ConditionalMambaNet
+  setting:
+    img_channel: 8  # 潜空间通道数
+    width: 64  # 基础通道数
+    enc_blk_nums: [ 1, 1, 1, 16]  # 每个尺度的AttentiveLayer数量
+    middle_blk_num: 1
+    dec_blk_nums: [ 1, 1, 1, 1 ]
+    d_state: 16  # Mamba的状态维度
+    num_heads: 4  # 注意力头数
+    window_size: 8  # 窗口大小（根据特征图尺寸调整）
+    inner_rank: 32  # ASSM的内部秩
+    num_tokens: 64  # token数量
+
+network_L:
+  which_model: UNet
+  setting:
+    in_ch: 3
+    out_ch: 3
+    ch: 8
+    ch_mult: [4, 8, 8, 16]
+    embed_dim: 8
+
+#### path
+path:
+  pretrain_model_G: ~
+  strict_load: true
+  resume_state: ~
+  pretrain_model_L: /opt/data/private/LHD/refusion/codes/config/latent-dehazing/pretrained_models/latent_NH_150000_G.pth
+
+#### training settings: learning rate scheme, loss
+train:
+  optimizer: Lion
+  lr_G: !!float 3e-5
+  lr_scheme: TrueCosineAnnealingLR
+  beta1: 0.9
+  beta2: 0.99
+  niter: 400000
+  warmup_iter: -1  # no warm up
+  lr_steps: [200000, 400000, 600000]
+  lr_gamma: 0.5
+  eta_min: !!float 1e-7
+
+  # criterion
+  is_weighted: False
+  loss_type: l1
+  weight: 1.0
+
+  manual_seed: 0
+  val_freq: !!float 1e3
+
+#### logger
+logger:
+  print_freq: 1000
+  save_checkpoint_freq: !!float 1e4
